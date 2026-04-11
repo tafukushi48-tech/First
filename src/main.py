@@ -344,7 +344,7 @@ def run_pipeline(
 
     # --- Step 1: 既存 CSV のキーを読み込む ---
     logger.info("=== Step 1: 既存データ読み込み ===")
-    existing_pmids, existing_dois, existing_titles = dedupe.load_existing_keys(csv_path)
+    existing_dois, existing_pmids, existing_titles = dedupe.load_existing_keys(csv_path)
 
     # --- Step 2: PubMed 取得 ---
     logger.info("=== Step 2: PubMed 検索 ===")
@@ -377,7 +377,7 @@ def run_pipeline(
     # --- Step 4: 重複除去 ---
     logger.info("=== Step 4: 重複除去 ===")
     unique_records, dedupe_stats = dedupe.deduplicate(
-        all_records, existing_pmids, existing_dois, existing_titles
+        all_records, existing_dois, existing_pmids, existing_titles
     )
     stats["after_dedupe"] = len(unique_records)
 
