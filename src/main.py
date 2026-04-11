@@ -447,6 +447,10 @@ def _normalize_raw_record(rec: dict) -> dict:
     """
     result = dict(rec)
 
+    # source: スキーマ定義に合わせて小文字化する ("PubMed" → "pubmed" 等)
+    if result.get("source"):
+        result["source"] = result["source"].lower().replace(" ", "")
+
     # first_author: authors の先頭要素を抽出 (既に設定済みの場合はスキップ)
     if not result.get("first_author"):
         authors_str = (result.get("authors") or "").strip()
@@ -519,14 +523,16 @@ def _print_dry_run_report(
         title    = str(rec.get("title", "（タイトルなし）"))
         # タイトルが長い場合は折り返して表示
         title_lines = [title[j:j+64] for j in range(0, min(len(title), 128), 64)]
-        reason   = str(rec.get("ma_relevance_reason", ""))[:56]
+        reason   = str(rec.get("why_it_matters_for_ma", ""))[:56]
+        pub_date = str(rec.get("publication_date", "") or "")
+        pub_year = pub_date[:4] if pub_date else "?"
 
         lines += [_RPT_LINE]
         lines += [f"  [{i}] {line}" for line in title_lines]
         lines += [
-            f"      年: {rec.get('pub_year', '?'):<6}"
+            f"      年: {pub_year:<6}"
             f"ソース: {str(rec.get('source', '?')):<12}"
-            f"review_flag: {rec.get('review_flag', '?')}",
+            f"review_flag: {rec.get('review_flag', False)}",
             f"      disease_subtype  : {rec.get('disease_subtype', '?')}",
             f"      treatment_area   : {rec.get('treatment_area', '?')}",
             f"      publication_type : {rec.get('publication_type', '?')}",

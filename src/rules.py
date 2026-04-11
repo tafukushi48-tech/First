@@ -506,8 +506,8 @@ PUBLICATION_TYPE_RULES: list[Rule] = [
     Rule(
         label="RCT",
         patterns=(
-            r"randomized\s+(controlled\s+)?trial",
-            r"randomised\s+(controlled\s+)?trial",
+            r"randomized\s+(controlled\s+)?trial\b",   # \b で "trials" (複数形) を除外
+            r"randomised\s+(controlled\s+)?trial\b",
             r"\bRCT\b",
             r"double.?blind.{0,40}placebo",
             r"placebo.{0,40}controlled.{0,40}(trial|study)",
@@ -567,7 +567,7 @@ PUBLICATION_TYPE_RULES: list[Rule] = [
             r"\bletter\s+to\s+the\s+editor",
             r"\bcorrespondence\b",
             r"\bcommentary\b",
-            r"\bresponse\s+to\b",
+            r"\bresponse\s+to\s+(the\s+)?(letter|editorial|comment|editor|authors)\b",
             r"\bin\s+reply\b",
             r"\bpoint\s+of\s+view\b",
         ),
