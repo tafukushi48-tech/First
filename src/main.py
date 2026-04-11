@@ -70,25 +70,179 @@ _BACKUP_DIR   = os.path.join(_DATA_DIR, "backups")
 _LOG_DIR      = os.path.join(_DATA_DIR, "logs")
 
 # ---------------------------------------------------------------------------
-# HAE 検索クエリ
+# HAE 検索クエリ定数
 # ---------------------------------------------------------------------------
+# 4つのクエリセットで用途別に収集範囲を制御する。
 # CLAUDE.md 対象疾患: HAE type1/2, HAE-nC1-INH, bradykinin-mediated angioedema
-_PUBMED_QUERY = (
-    '("hereditary angioedema"[MeSH Terms] OR '
+#
+# クエリキー:
+#   "general"  — HAE全般ベースライン (acquired AE / allergic AE を NOT 除外)
+#   "nc1inh"   — HAE with normal C1-INH (FXII/PLG/ANGPT1/KNG1/HS3ST6 等)
+#   "ltp"      — 長期予防治療薬剤モニタリング (lanadelumab, garadacimab 等)
+#   "review"   — ガイドライン・メタ解析・システマティックレビュー
+
+# ── PubMed クエリ ──────────────────────────────────────────────────────────
+
+# 1. HAE全般
+# MeSH + フリーテキスト併用。"HAE" は angioedema との AND で多義性を抑制。
+# NOT 節で後天性 (acquired) ・アレルギー性 AE のノイズを除去。
+PUBMED_QUERY_HAE_GENERAL = (
+    '('
+    '"hereditary angioedema"[MeSH Terms] OR '
     '"hereditary angioedema"[Title/Abstract] OR '
     '"C1 inhibitor deficiency"[Title/Abstract] OR '
     '"C1-INH deficiency"[Title/Abstract] OR '
-    '"bradykinin-mediated angioedema"[Title/Abstract] OR '
-    '"HAE"[Title/Abstract] AND "angioedema"[Title/Abstract])'
+    '"C1 esterase inhibitor deficiency"[Title/Abstract] OR '
+    '"SERPING1"[Title/Abstract] OR '
+    '("HAE"[Title/Abstract] AND "angioedema"[Title/Abstract]) OR '
+    '"bradykinin-mediated angioedema"[Title/Abstract]'
+    ') NOT ('
+    '"acquired angioedema"[Title/Abstract] OR '
+    '"acquired C1 inhibitor deficiency"[Title/Abstract] OR '
+    '"allergic angioedema"[Title/Abstract]'
+    ')'
 )
 
-_EUROPEPMC_QUERY = (
+# 2. HAE with normal C1-INH (HAE-nC1INH)
+# 原因遺伝子 (FXII/PLG/ANGPT1/KNG1/HS3ST6) を angioedema と AND して特異性を確保。
+PUBMED_QUERY_HAE_NC1INH = (
+    '('
+    '(("hereditary angioedema"[Title/Abstract] OR "HAE"[Title/Abstract]) '
+    'AND ("normal C1 inhibitor"[Title/Abstract] OR "normal C1-INH"[Title/Abstract])) OR '
+    '"HAE-nC1INH"[Title/Abstract] OR '
+    '"HAE with normal C1"[Title/Abstract] OR '
+    '(("factor XII"[Title/Abstract] OR "FXII"[Title/Abstract] OR "F12"[Title/Abstract]) '
+    'AND ("hereditary angioedema"[Title/Abstract] OR "angioedema"[Title/Abstract])) OR '
+    '("plasminogen"[Title/Abstract] AND "angioedema"[Title/Abstract] '
+    'AND ("mutation"[Title/Abstract] OR "variant"[Title/Abstract])) OR '
+    '("ANGPT1"[Title/Abstract] AND "angioedema"[Title/Abstract]) OR '
+    '("KNG1"[Title/Abstract] AND "angioedema"[Title/Abstract]) OR '
+    '("HS3ST6"[Title/Abstract] AND "angioedema"[Title/Abstract]) OR '
+    '("estrogen"[Title/Abstract] AND "hereditary angioedema"[Title/Abstract])'
+    ')'
+)
+
+# 3. 長期予防治療 (LTP)
+# 薬剤固有名詞 (lanadelumab 等) は HAE 特異的なので単独で可。
+# danazol/stanozolol は他疾患でも使われるため HAE コンテキストが必須。
+PUBMED_QUERY_LTP = (
+    '('
+    '"lanadelumab"[Title/Abstract] OR "Takhzyro"[Title/Abstract] OR '
+    '"berotralstat"[Title/Abstract] OR "Orladeyo"[Title/Abstract] OR '
+    '"Haegarda"[Title/Abstract] OR '
+    '"garadacimab"[Title/Abstract] OR "CSL312"[Title/Abstract] OR '
+    '"donidalorsen"[Title/Abstract] OR "KVD824"[Title/Abstract] OR '
+    '("long-term prophylaxis"[Title/Abstract] '
+    'AND ("hereditary angioedema"[Title/Abstract] OR "HAE"[Title/Abstract])) OR '
+    '(("danazol"[Title/Abstract] OR "stanozolol"[Title/Abstract]) '
+    'AND ("hereditary angioedema"[Title/Abstract] OR "HAE"[Title/Abstract]))'
+    ')'
+)
+
+# 4. ガイドライン・総説・メタ解析
+# PubMed publication type タグ ([pt]) で確実に捕捉。
+# タイトルキーワードで [pt] 未付与の consensus 文書もカバー。
+PUBMED_QUERY_REVIEW_GUIDELINE = (
+    '('
+    '"hereditary angioedema"[MeSH Terms] OR '
+    '"hereditary angioedema"[Title/Abstract] OR '
+    '("HAE"[Title/Abstract] AND "angioedema"[Title/Abstract])'
+    ') AND ('
+    'Review[pt] OR Meta-Analysis[pt] OR "Systematic Review"[pt] OR '
+    'Practice Guideline[pt] OR Guideline[pt] OR '
+    '"consensus"[Title/Abstract] OR '
+    '"guideline"[Title/Abstract] OR '
+    '"systematic review"[Title/Abstract] OR '
+    '"meta-analysis"[Title/Abstract] OR '
+    '"narrative review"[Title/Abstract]'
+    ')'
+)
+
+# ── Europe PMC クエリ (Lucene 構文) ────────────────────────────────────────
+
+# 1. HAE全般
+EUROPEPMC_QUERY_HAE_GENERAL = (
+    '('
     '"hereditary angioedema" OR '
     '"C1 inhibitor deficiency" OR '
     '"C1-INH deficiency" OR '
-    '"bradykinin-mediated angioedema" OR '
-    '("HAE" AND "angioedema")'
+    '"C1 esterase inhibitor deficiency" OR '
+    '"SERPING1" OR '
+    '("HAE" AND "angioedema") OR '
+    '"bradykinin-mediated angioedema"'
+    ') NOT ('
+    '"acquired angioedema" OR '
+    '"acquired C1 inhibitor deficiency" OR '
+    '"allergic angioedema"'
+    ')'
 )
+
+# 2. HAE with normal C1-INH
+EUROPEPMC_QUERY_HAE_NC1INH = (
+    '('
+    '("hereditary angioedema" AND "normal C1 inhibitor") OR '
+    '("hereditary angioedema" AND "normal C1-INH") OR '
+    '"HAE-nC1INH" OR '
+    '"HAE with normal C1" OR '
+    '(("factor XII" OR "FXII") AND "angioedema") OR '
+    '("plasminogen" AND "angioedema" AND ("mutation" OR "variant")) OR '
+    '("ANGPT1" AND "angioedema") OR '
+    '("KNG1" AND "angioedema") OR '
+    '("HS3ST6" AND "angioedema") OR '
+    '("estrogen" AND "hereditary angioedema")'
+    ')'
+)
+
+# 3. 長期予防治療 (LTP)
+EUROPEPMC_QUERY_LTP = (
+    '('
+    '"lanadelumab" OR "Takhzyro" OR '
+    '"berotralstat" OR "Orladeyo" OR '
+    '"Haegarda" OR '
+    '"garadacimab" OR "CSL312" OR '
+    '"donidalorsen" OR "KVD824" OR '
+    '("long-term prophylaxis" AND ("hereditary angioedema" OR "HAE")) OR '
+    '(("danazol" OR "stanozolol") AND ("hereditary angioedema" OR "HAE"))'
+    ')'
+)
+
+# 4. ガイドライン・総説・メタ解析
+EUROPEPMC_QUERY_REVIEW_GUIDELINE = (
+    '('
+    '"hereditary angioedema" OR '
+    '("HAE" AND "angioedema")'
+    ') AND ('
+    '"consensus" OR "guideline" OR '
+    '"systematic review" OR "meta-analysis" OR '
+    '"narrative review" OR '
+    'PUB_TYPE:review OR PUB_TYPE:"practice-guideline"'
+    ')'
+)
+
+# ── クエリセット辞書 ────────────────────────────────────────────────────────
+# キー → (PubMed クエリ, Europe PMC クエリ, 説明)
+QUERY_SETS: dict[str, tuple[str, str, str]] = {
+    "general": (
+        PUBMED_QUERY_HAE_GENERAL,
+        EUROPEPMC_QUERY_HAE_GENERAL,
+        "HAE全般ベースライン",
+    ),
+    "nc1inh": (
+        PUBMED_QUERY_HAE_NC1INH,
+        EUROPEPMC_QUERY_HAE_NC1INH,
+        "HAE with normal C1-INH (HAE-nC1INH)",
+    ),
+    "ltp": (
+        PUBMED_QUERY_LTP,
+        EUROPEPMC_QUERY_LTP,
+        "長期予防治療薬剤モニタリング (LTP)",
+    ),
+    "review": (
+        PUBMED_QUERY_REVIEW_GUIDELINE,
+        EUROPEPMC_QUERY_REVIEW_GUIDELINE,
+        "ガイドライン・メタ解析・システマティックレビュー",
+    ),
+}
 
 
 # ---------------------------------------------------------------------------
@@ -313,27 +467,31 @@ def _normalize_raw_record(rec: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 def run_pipeline(
-    pubmed_query:    str  = _PUBMED_QUERY,
-    europepmc_query: str  = _EUROPEPMC_QUERY,
-    csv_path:        str  = _CSV_PATH,
-    max_results:     int  = 500,
-    dry_run:         bool = False,
+    query_keys:  list[str] | None = None,
+    csv_path:    str  = _CSV_PATH,
+    max_results: int  = 500,
+    dry_run:     bool = False,
 ) -> dict:
     """
     論文収集パイプラインを実行する。
 
     Args:
-        pubmed_query:    PubMed 検索クエリ
-        europepmc_query: Europe PMC 検索クエリ
-        csv_path:        出力 CSV パス
-        max_results:     各ソースあたりの最大取得件数
-        dry_run:         True の場合は CSV に書き込まずログのみ出力
+        query_keys:  実行するクエリセットのキーリスト。
+                     None の場合は QUERY_SETS の全キーを実行する。
+                     有効なキー: "general", "nc1inh", "ltp", "review"
+        csv_path:    出力 CSV パス
+        max_results: 各クエリ・各ソースあたりの最大取得件数
+        dry_run:     True の場合は CSV に書き込まずログのみ出力
 
     Returns:
-        実行統計 dict (fetched, after_dedupe, saved, errors)
+        実行統計 dict (fetched_pubmed, fetched_europepmc, after_dedupe, saved, errors)
     """
     logger = logging.getLogger(__name__)
     run_start = time.time()
+
+    if query_keys is None:
+        query_keys = list(QUERY_SETS.keys())
+
     stats: dict[str, int] = {
         "fetched_pubmed":    0,
         "fetched_europepmc": 0,
@@ -346,29 +504,39 @@ def run_pipeline(
     logger.info("=== Step 1: 既存データ読み込み ===")
     existing_dois, existing_pmids, existing_titles = dedupe.load_existing_keys(csv_path)
 
-    # --- Step 2: PubMed 取得 ---
-    logger.info("=== Step 2: PubMed 検索 ===")
-    try:
-        pubmed_records = search_pubmed.search(pubmed_query, retmax=max_results)
-        stats["fetched_pubmed"] = len(pubmed_records)
-    except Exception as e:
-        logger.error("PubMed 検索で予期しないエラー: %s", e)
-        pubmed_records = []
-        stats["errors"] += 1
+    # --- Step 2 & 3: 各クエリセットで PubMed + Europe PMC を取得 ---
+    raw_records: list[dict] = []
 
-    # --- Step 3: Europe PMC 取得 ---
-    logger.info("=== Step 3: Europe PMC 検索 ===")
-    try:
-        epmc_records = search_europepmc.search(europepmc_query, page_size=max_results)
-        stats["fetched_europepmc"] = len(epmc_records)
-    except Exception as e:
-        logger.error("Europe PMC 検索で予期しないエラー: %s", e)
-        epmc_records = []
-        stats["errors"] += 1
+    for key in query_keys:
+        pubmed_q, epmc_q, description = QUERY_SETS[key]
+        logger.info("=== クエリセット [%s]: %s ===", key, description)
 
-    all_records = [_normalize_raw_record(r) for r in pubmed_records + epmc_records]
-    logger.info("取得合計: %d件 (PubMed: %d, Europe PMC: %d)",
-                len(all_records), stats["fetched_pubmed"], stats["fetched_europepmc"])
+        # PubMed
+        try:
+            pubmed_records = search_pubmed.search(pubmed_q, retmax=max_results)
+            stats["fetched_pubmed"] += len(pubmed_records)
+            raw_records.extend(pubmed_records)
+            logger.info("  PubMed: %d件取得", len(pubmed_records))
+        except Exception as e:
+            logger.error("  PubMed [%s] 検索エラー: %s", key, e)
+            stats["errors"] += 1
+
+        # Europe PMC
+        try:
+            epmc_records = search_europepmc.search(epmc_q, page_size=max_results)
+            stats["fetched_europepmc"] += len(epmc_records)
+            raw_records.extend(epmc_records)
+            logger.info("  Europe PMC: %d件取得", len(epmc_records))
+        except Exception as e:
+            logger.error("  Europe PMC [%s] 検索エラー: %s", key, e)
+            stats["errors"] += 1
+
+    all_records = [_normalize_raw_record(r) for r in raw_records]
+    logger.info(
+        "取得合計: %d件 (PubMed: %d, Europe PMC: %d) — クエリセット: %s",
+        len(all_records), stats["fetched_pubmed"], stats["fetched_europepmc"],
+        ", ".join(query_keys),
+    )
 
     if not all_records:
         logger.warning("取得レコードが 0件です。パイプラインを終了します")
@@ -439,12 +607,14 @@ def run_pipeline(
 
 def _parse_args() -> argparse.Namespace:
     """コマンドライン引数をパースする。"""
+    valid_query_keys = list(QUERY_SETS.keys())  # ["general", "nc1inh", "ltp", "review"]
+
     p = argparse.ArgumentParser(
         description="HAE関連論文を PubMed / Europe PMC から自動収集して CSV に蓄積する"
     )
     p.add_argument(
         "--max-results", type=int, default=500,
-        help="各ソースあたりの最大取得件数 (デフォルト: 500)",
+        help="各クエリ・各ソースあたりの最大取得件数 (デフォルト: 500)",
     )
     p.add_argument(
         "--csv-path", type=str, default=_CSV_PATH,
@@ -453,6 +623,18 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument(
         "--dry-run", action="store_true",
         help="CSV に書き込まずログ出力のみ行うテストモード",
+    )
+    p.add_argument(
+        "--query",
+        nargs="+",
+        choices=["all"] + valid_query_keys,
+        default=["all"],
+        metavar="QUERY_KEY",
+        help=(
+            "実行するクエリセット (複数指定可)。"
+            f"選択肢: all (全セット), {', '.join(valid_query_keys)}。"
+            "デフォルト: all"
+        ),
     )
     return p.parse_args()
 
@@ -465,7 +647,18 @@ def main() -> None:
     setup_logging(_LOG_DIR, run_ts)
     logger = logging.getLogger(__name__)
 
-    logger.info("HAE論文収集パイプライン開始 (実行ID: %s)", run_ts)
+    # --query の "all" を全キーに展開する
+    if "all" in args.query:
+        query_keys = list(QUERY_SETS.keys())
+    else:
+        # 重複排除しつつ QUERY_SETS の順序を維持する
+        seen: set[str] = set()
+        query_keys = [k for k in args.query if not (k in seen or seen.add(k))]  # type: ignore[func-returns-value]
+
+    logger.info(
+        "HAE論文収集パイプライン開始 (実行ID: %s) — クエリ: %s",
+        run_ts, ", ".join(query_keys),
+    )
     if args.dry_run:
         logger.info("[DRY-RUN モード] CSV への書き込みはスキップされます")
 
@@ -476,6 +669,7 @@ def main() -> None:
     # パイプライン実行
     try:
         run_pipeline(
+            query_keys=query_keys,
             csv_path=args.csv_path,
             max_results=args.max_results,
             dry_run=args.dry_run,
