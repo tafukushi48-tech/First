@@ -267,6 +267,164 @@ def classify_ma_relevance(
 
 
 # ---------------------------------------------------------------------------
+# why_it_matters_for_ma 生成 (ルールベース)
+# ---------------------------------------------------------------------------
+
+# 疾患サブタイプの表示用ラベル (日本語出力向け短縮形)
+_DISEASE_DISPLAY: dict[str, str] = {
+    "HAE type 1/2":    "C1-INH欠乏型HAE",
+    "HAE-nC1INH":      "正常C1-INH型HAE",
+    "unspecified HAE": "HAE",
+}
+
+
+def generate_why_it_matters_for_ma(
+    publication_type: str,
+    treatment_area:   str,
+    disease_subtype:  str,
+    evidence_level:   str,
+) -> str:
+    """
+    publication_type / treatment_area / disease_subtype / evidence_level の組合せから、
+    日本のMedical Affairsにとっての意義を示す1文（日本語）を生成する。
+
+    LLMを使用しないルールベース実装。
+    「可能性があります」「となりえます」等の表現を用い、過度な断定を避ける。
+
+    評価順:
+      1. guideline/consensus
+      2. RCT (treatment_area で細分化)
+      3. OLE/extension
+      4. review (evidence_level で meta-analysis/SR とナラティブを区別)
+      5. RWE/observational (treatment_area で細分化)
+      6. treatment_area によるフォールバック (epidemiology / burden/QoL / diagnosis)
+      7. publication_type によるフォールバック (case report / letter/commentary)
+      8. basic science フォールバック
+      9. デフォルト
+
+    Args:
+        publication_type: 論文種別 (classify_publication_type の出力値)
+        treatment_area:   治療領域 (classify_treatment_area の出力値)
+        disease_subtype:  疾患サブタイプ (classify_disease_subtype の出力値)
+        evidence_level:   エビデンスレベル (classify_evidence_level の出力値)
+                          "high" かつ publication_type == "review" → meta-analysis/SR と判断
+
+    Returns:
+        MA関連性を説明する日本語文字列 (概ね100字以内)
+    """
+    d = _DISEASE_DISPLAY.get(disease_subtype, "HAE")
+
+    # ── ガイドライン・コンセンサス ─────────────────────────────────────────
+    if publication_type == "guideline/consensus":
+        return (
+            f"{d}の診療ガイドライン・コンセンサス文書として、"
+            "標準治療の推奨根拠を示す参照資料となりえます。"
+        )
+
+    # ── RCT ───────────────────────────────────────────────────────────────
+    if publication_type == "RCT":
+        if treatment_area == "long-term prophylaxis":
+            return (
+                f"{d}の長期予防を対象としたRCTとして、"
+                "有効性・安全性の根拠として医師説明やpayer交渉で活用できる可能性があります。"
+            )
+        if treatment_area == "acute treatment":
+            return (
+                f"{d}の急性発作治療に関するRCTとして、"
+                "治療選択の臨床的根拠として医療者への情報提供に活用できる可能性があります。"
+            )
+        return (
+            f"{d}を対象としたRCTとして、"
+            "MA活動における高エビデンスの参照文献として活用できる可能性があります。"
+        )
+
+    # ── OLE / 延長試験 ────────────────────────────────────────────────────
+    if publication_type == "OLE/extension":
+        return (
+            f"{d}の治療に関する延長試験として、"
+            "長期安全性・持続的有効性の訴求資料として活用できる可能性があります。"
+        )
+
+    # ── レビュー (meta-analysis/SR vs ナラティブ) ─────────────────────────
+    if publication_type == "review":
+        if evidence_level == "high":
+            # evidence_level が "high" に昇格 → meta-analysis または SR と判断
+            if treatment_area in {"long-term prophylaxis", "acute treatment", "guidelines"}:
+                return (
+                    f"{d}の治療に関するメタ解析・SRとして、"
+                    "エビデンス総括の根拠資料として活用できる可能性があります。"
+                )
+            return (
+                f"{d}に関するメタ解析・SRとして、"
+                "エビデンスの全体像把握に活用できる可能性があります。"
+            )
+        # ナラティブレビュー (evidence_level == "medium")
+        if treatment_area in {"long-term prophylaxis", "acute treatment", "guidelines"}:
+            return (
+                f"{d}の治療に関する総説として、"
+                "医師・payer向け教育資料の補足として活用できる可能性があります。"
+            )
+        return (
+            f"{d}に関する総説として、"
+            "疾患・治療の包括的理解のための参考資料として保持します。"
+        )
+
+    # ── RWE / 観察研究 ────────────────────────────────────────────────────
+    if publication_type == "RWE/observational":
+        if treatment_area in {"long-term prophylaxis", "acute treatment"}:
+            return (
+                f"{d}の治療実態を示すリアルワールドデータとして、"
+                "payer対応や医療資源活用の根拠として有用な可能性があります。"
+            )
+        if treatment_area == "epidemiology":
+            return (
+                f"{d}の疫学・医療資源利用に関する実態調査として、"
+                "payer対応の定量的根拠として活用できる可能性があります。"
+            )
+        return (
+            f"{d}に関する観察研究として、"
+            "実臨床での疾患管理状況を把握するための参考資料として保持します。"
+        )
+
+    # ── 治療領域フォールバック ────────────────────────────────────────────
+    if treatment_area == "epidemiology":
+        return (
+            f"{d}の疫学データとして、"
+            "患者規模の把握やpayer・行政への疾患啓発活動の根拠として活用できる可能性があります。"
+        )
+    if treatment_area == "burden/QoL":
+        return (
+            f"{d}患者のQoL・疾患負荷データとして、"
+            "患者アウトカムの重要性をpayerや医療者に伝える際の根拠として活用できる可能性があります。"
+        )
+    if treatment_area == "diagnosis":
+        return (
+            f"{d}の診断・バイオマーカーに関する知見として、"
+            "早期診断啓発や診断精度向上に向けた医師教育の参考資料として活用できる可能性があります。"
+        )
+
+    # ── 論文種別フォールバック ────────────────────────────────────────────
+    if publication_type == "case report":
+        return (
+            f"{d}に関する症例報告として、"
+            "個別の治療経験を共有する参考資料として保持します。"
+        )
+    if publication_type == "letter/commentary":
+        return (
+            f"{d}に関する専門家のコメンタリーとして、"
+            "議論の動向を把握するための参考資料として保持します。"
+        )
+    if treatment_area == "basic science":
+        return (
+            f"{d}の病態・メカニズムに関する基礎研究として、"
+            "科学的背景の理解を深める参考資料として保持します。"
+        )
+
+    # ── デフォルト ────────────────────────────────────────────────────────
+    return f"{d}に関する文献として、MA活動の参考資料として保持します。"
+
+
+# ---------------------------------------------------------------------------
 # 統合エントリーポイント
 # ---------------------------------------------------------------------------
 
@@ -301,14 +459,20 @@ def classify_paper(record: dict) -> dict:
     treatment_area   = classify_treatment_area(title, abstract)
     publication_type = classify_publication_type(title, abstract)
     evidence_level   = classify_evidence_level(publication_type, title, abstract)
-    ma_label, ma_reason = classify_ma_relevance(
+    ma_label, _ = classify_ma_relevance(
         publication_type, evidence_level, treatment_area, disease_subtype
     )
 
-    # CSV スキーマ互換の整数スコアに変換
+    # why_it_matters_for_ma: publication_type / treatment_area / disease_subtype を
+    # 踏まえた日本語の1文（100字以内）
+    why_text = generate_why_it_matters_for_ma(
+        publication_type, treatment_area, disease_subtype, evidence_level
+    )[:100]
+
+    # CSV スキーマ互換の整数スコアに変換 (dry-run レポート等の内部用)
     ma_score = MA_RELEVANCE_TO_SCORE.get(ma_label, 0)
 
-    # review_flag: 手動レビューが必要な条件に1つでも該当すれば True
+    # review_flag: 手動レビューが必要な条件に1つでも該当すれば True (内部用)
     needs_review = (
         publication_type == "unknown"
         or evidence_level == "unknown"
@@ -322,8 +486,8 @@ def classify_paper(record: dict) -> dict:
         "publication_type":    publication_type,
         "evidence_level":      evidence_level,
         "ma_relevance":        ma_label,
-        "ma_relevance_score":  ma_score,
-        "ma_relevance_reason": ma_reason[:100],
+        "ma_relevance_score":  ma_score,       # 内部用 (CSV スキーマ外)
+        "ma_relevance_reason": why_text,       # run_pipeline で why_it_matters_for_ma へリネーム
         "classifier_version":  CLASSIFIER_VERSION,
-        "review_flag":         needs_review,
+        "review_flag":         needs_review,   # 内部用 (CSV スキーマ外)
     }
