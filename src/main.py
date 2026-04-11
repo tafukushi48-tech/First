@@ -276,6 +276,39 @@ def append_to_csv(records: list[dict], csv_path: str) -> int:
 
 
 # ---------------------------------------------------------------------------
+# 収集レコードの正規化
+# ---------------------------------------------------------------------------
+
+def _normalize_raw_record(rec: dict) -> dict:
+    """
+    各コレクターが返すフィールド名をスキーマ列名に統一する。
+
+    search_pubmed.search() は publication_date を返すが、SCHEMA では
+    pub_date / pub_year の2列に分かれているため、ここで変換する。
+    search_europepmc.search() が同じフィールド名で返す場合も同様に処理する。
+
+    Args:
+        rec: コレクターが返した生レコード dict
+
+    Returns:
+        pub_date / pub_year を持つ正規化済み dict (元 dict は変更しない)
+    """
+    if "publication_date" not in rec:
+        return rec
+
+    pub_date = rec.get("publication_date") or ""
+    try:
+        pub_year = int(pub_date[:4]) if pub_date else 0
+    except (ValueError, TypeError):
+        pub_year = 0
+
+    normalized = {k: v for k, v in rec.items() if k != "publication_date"}
+    normalized["pub_date"] = pub_date
+    normalized["pub_year"] = pub_year
+    return normalized
+
+
+# ---------------------------------------------------------------------------
 # パイプライン本体
 # ---------------------------------------------------------------------------
 
@@ -316,7 +349,7 @@ def run_pipeline(
     # --- Step 2: PubMed 取得 ---
     logger.info("=== Step 2: PubMed 検索 ===")
     try:
-        pubmed_records = search_pubmed.search(pubmed_query, max_results)
+        pubmed_records = search_pubmed.search(pubmed_query, retmax=max_results)
         stats["fetched_pubmed"] = len(pubmed_records)
     except Exception as e:
         logger.error("PubMed 検索で予期しないエラー: %s", e)
@@ -326,14 +359,14 @@ def run_pipeline(
     # --- Step 3: Europe PMC 取得 ---
     logger.info("=== Step 3: Europe PMC 検索 ===")
     try:
-        epmc_records = search_europepmc.search(europepmc_query, max_results)
+        epmc_records = search_europepmc.search(europepmc_query, page_size=max_results)
         stats["fetched_europepmc"] = len(epmc_records)
     except Exception as e:
         logger.error("Europe PMC 検索で予期しないエラー: %s", e)
         epmc_records = []
         stats["errors"] += 1
 
-    all_records = pubmed_records + epmc_records
+    all_records = [_normalize_raw_record(r) for r in pubmed_records + epmc_records]
     logger.info("取得合計: %d件 (PubMed: %d, Europe PMC: %d)",
                 len(all_records), stats["fetched_pubmed"], stats["fetched_europepmc"])
 
