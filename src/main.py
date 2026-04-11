@@ -463,6 +463,89 @@ def _normalize_raw_record(rec: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# dry-run レポート表示
+# ---------------------------------------------------------------------------
+
+_RPT_SEP  = "=" * 68
+_RPT_LINE = "-" * 68
+
+
+def _print_dry_run_report(
+    classified:   list[dict],
+    stats:        dict[str, int],
+    dedupe_stats: dict[str, int],
+    sample_size:  int = 5,
+) -> None:
+    """
+    dry-run 実行結果のサマリーレポートを標準出力に表示する。
+
+    表示内容:
+      - 取得件数 (ソース別)
+      - 重複除去の内訳
+      - 分類済みサンプル (先頭 sample_size 件)
+
+    Args:
+        classified:   分類済みレコードのリスト
+        stats:        run_pipeline の統計 dict
+        dedupe_stats: deduplicate() の統計 dict
+        sample_size:  表示するサンプル件数 (デフォルト: 5)
+    """
+    total_fetched = stats["fetched_pubmed"] + stats["fetched_europepmc"]
+    samples       = classified[:sample_size]
+
+    lines: list[str] = [
+        "",
+        _RPT_SEP,
+        "  [DRY-RUN] 実行レポート  —  CSV への保存はスキップされました",
+        _RPT_SEP,
+        "",
+        "■ 取得件数",
+        f"  PubMed     : {stats['fetched_pubmed']:>6} 件",
+        f"  Europe PMC : {stats['fetched_europepmc']:>6} 件",
+        f"  ─────────────────────",
+        f"  合計       : {total_fetched:>6} 件",
+        "",
+        "■ 重複除去",
+        f"  DOI 重複    : {dedupe_stats['dup_doi']:>6} 件",
+        f"  PMID 重複   : {dedupe_stats['dup_pmid']:>6} 件",
+        f"  タイトル重複 : {dedupe_stats['dup_title']:>6} 件",
+        f"  ─────────────────────",
+        f"  除外 合計   : {dedupe_stats['excluded']:>6} 件",
+        f"  重複除去後  : {dedupe_stats['kept']:>6} 件"
+        + (f"  (うち識別子なし要レビュー: {dedupe_stats['title_candidate']} 件)"
+           if dedupe_stats.get("title_candidate") else ""),
+        "",
+        f"■ 分類済みサンプル  先頭 {len(samples)} 件 / 全 {len(classified)} 件",
+    ]
+
+    # MA スコアを星記号に変換
+    _STARS = {3: "★★★", 2: "★★☆", 1: "★☆☆", 0: "☆☆☆"}
+
+    for i, rec in enumerate(samples, 1):
+        ma_score = int(rec.get("ma_relevance_score", 0) or 0)
+        title    = str(rec.get("title", "（タイトルなし）"))
+        # タイトルが長い場合は折り返して表示
+        title_lines = [title[j:j+64] for j in range(0, min(len(title), 128), 64)]
+        reason   = str(rec.get("ma_relevance_reason", ""))[:56]
+
+        lines += [_RPT_LINE]
+        lines += [f"  [{i}] {line}" for line in title_lines]
+        lines += [
+            f"      年: {rec.get('pub_year', '?'):<6}"
+            f"ソース: {str(rec.get('source', '?')):<12}"
+            f"review_flag: {rec.get('review_flag', '?')}",
+            f"      disease_subtype  : {rec.get('disease_subtype', '?')}",
+            f"      treatment_area   : {rec.get('treatment_area', '?')}",
+            f"      publication_type : {rec.get('publication_type', '?')}",
+            f"      evidence_level   : {rec.get('evidence_level', '?')}",
+            f"      MA関連度         : {_STARS.get(ma_score, '?')} (score={ma_score})  {reason}",
+        ]
+
+    lines += [_RPT_SEP, ""]
+    print("\n".join(lines))
+
+
+# ---------------------------------------------------------------------------
 # パイプライン本体
 # ---------------------------------------------------------------------------
 
@@ -571,11 +654,12 @@ def run_pipeline(
 
     logger.info("分類完了: %d件", len(classified))
 
-    # --- Step 6: 保存 ---
+    # --- Step 6: 保存 (または dry-run レポート) ---
     logger.info("=== Step 6: CSV 追記 ===")
     if dry_run:
         logger.info("[DRY-RUN] 保存はスキップします (%d件対象)", len(classified))
         stats["saved"] = 0
+        _print_dry_run_report(classified, stats, dedupe_stats)
     else:
         try:
             stats["saved"] = append_to_csv(classified, csv_path)
