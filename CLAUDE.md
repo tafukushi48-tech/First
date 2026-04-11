@@ -154,23 +154,20 @@ publication_type から evidence_level へのデフォルトマッピングを
 ```
 pmid                  # PubMed ID（文字列、なければ空）
 doi                   # DOI（文字列、なければ空）
+source                # 取得元（"pubmed" / "europepmc" / "manual"）
 title                 # 論文タイトル（UTF-8）
 abstract              # アブストラクト（UTF-8、なければ空）
-authors               # 著者リスト（セミコロン区切り）
 journal               # ジャーナル名
-pub_year              # 出版年（整数）
-pub_date              # 出版日（YYYY-MM-DD、不明は YYYY-01-01）
-source                # 取得元（"pubmed" / "europepmc" / "manual"）
+publication_date      # 出版日（YYYY-MM-DD、不明は YYYY-01-01）
+first_author          # 筆頭著者名（authors の先頭要素）
+authors               # 著者リスト（セミコロン区切り）
 disease_subtype       # 分類1
 treatment_area        # 分類2
 publication_type      # 分類3
 evidence_level        # 分類4
-ma_relevance_score    # 分類5（整数 0–3）
-ma_relevance_reason   # MA関連度の根拠（日本語、100字以内）
-classifier_version    # 分類ルールのバージョン（semver文字列）
-collected_at          # 収集日時（ISO 8601 UTC）
-review_flag           # 手動レビュー要否（True/False）
-notes                 # 自由記述（手動補記用）
+ma_relevance          # MA関連度ラベル（"high" / "medium" / "low"）
+why_it_matters_for_ma # MA関連度の根拠（日本語、100字以内）
+retrieved_at          # 収集日時（ISO 8601 UTC）
 ```
 
 ---
@@ -213,19 +210,19 @@ notes                 # 自由記述（手動補記用）
 ### 必須チェック（保存前に validate して弾く）
 - `title` が空のレコードは保存しない
 - `pmid` と `doi` が両方空のレコードは保存しない
-- `pub_year` が 1900 未満または現在年超のレコードは警告ログを出す
-- `ma_relevance_score` が 0–3 の整数以外は保存しない
+- `ma_relevance` が "high" / "medium" / "low" 以外のレコードは保存しない
+- `publication_date` の年部分が 1900 未満または現在年超のレコードは警告ログを出す
 
 ### 重複判定ルール（優先順位順）
-1. `pmid` が一致 → 重複
-2. `doi` が一致（大文字小文字・前後スペース正規化後）→ 重複
-3. 両方空の場合: `title` を正規化（小文字・記号除去）して一致確認 → 重複候補として `review_flag = True` で保存
+1. `doi` が一致（正規化後）→ 重複
+2. `pmid` が一致 → 重複
+3. 両方空の場合: `title` を正規化（小文字・記号除去）して一致確認 → 重複候補として収録
 
-### 手動レビュー対象
-以下の条件に1つでも該当するレコードは `review_flag = True` を立てる：
+### 手動レビュー対象 (ログ記録のみ、CSV列は持たない)
+以下の条件に該当するレコードはログに `review_flag=True` を記録する：
 - `disease_subtype = "unclassified"`
-- `evidence_level = "unclassified"`
-- `ma_relevance_score = 0`
+- `evidence_level = "unknown"`
+- `ma_relevance = "low"`
 - タイトル重複候補（PMIDもDOIも空）
 
 ---

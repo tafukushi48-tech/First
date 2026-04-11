@@ -41,23 +41,20 @@ import search_pubmed
 SCHEMA: list[str] = [
     "pmid",
     "doi",
+    "source",
     "title",
     "abstract",
-    "authors",
     "journal",
-    "pub_year",
-    "pub_date",
-    "source",
+    "publication_date",
+    "first_author",
+    "authors",
     "disease_subtype",
     "treatment_area",
     "publication_type",
     "evidence_level",
-    "ma_relevance_score",
-    "ma_relevance_reason",
-    "classifier_version",
-    "collected_at",
-    "review_flag",
-    "notes",
+    "ma_relevance",
+    "why_it_matters_for_ma",
+    "retrieved_at",
 ]
 
 # ---------------------------------------------------------------------------
@@ -331,22 +328,24 @@ def validate_record(record: dict) -> tuple[bool, str]:
     if not pmid and not doi:
         return False, "pmid と doi が両方空"
 
-    try:
-        ma_score = int(record.get("ma_relevance_score", -1))
-    except (ValueError, TypeError):
-        return False, f"ma_relevance_score が不正: {record.get('ma_relevance_score')}"
-    if not (0 <= ma_score <= 3):
-        return False, f"ma_relevance_score が範囲外: {ma_score}"
+    # ma_relevance は "high" / "medium" / "low" の文字列のみ許容
+    ma_relevance = str(record.get("ma_relevance", "") or "").strip()
+    if ma_relevance not in {"high", "medium", "low"}:
+        return False, f"ma_relevance が不正値: '{ma_relevance}'"
 
-    # pub_year の範囲チェック (弾かずに警告のみ)
-    try:
-        pub_year = int(record.get("pub_year", 0) or 0)
-        current_year = datetime.datetime.utcnow().year
-        if pub_year and (pub_year < 1900 or pub_year > current_year):
-            logger.warning("pub_year が範囲外: %d (title: %s)", pub_year,
-                           str(record.get("title", ""))[:50])
-    except (ValueError, TypeError):
-        pass
+    # publication_date の年部分が範囲外の場合は警告 (弾かずにログのみ)
+    pub_date_str = str(record.get("publication_date", "") or "")
+    if pub_date_str:
+        try:
+            pub_year = int(pub_date_str[:4])
+            current_year = datetime.datetime.utcnow().year
+            if pub_year < 1900 or pub_year > current_year:
+                logger.warning(
+                    "publication_date の年が範囲外: %s (title: %s)",
+                    pub_date_str, str(record.get("title", ""))[:50],
+                )
+        except (ValueError, TypeError):
+            pass
 
     return True, ""
 
@@ -404,10 +403,8 @@ def append_to_csv(records: list[dict], csv_path: str) -> int:
             df_new[col] = ""
     df_new = df_new[SCHEMA]
 
-    # 型の正規化
-    df_new["pub_year"]          = pd.to_numeric(df_new["pub_year"], errors="coerce").fillna(0).astype(int)
-    df_new["ma_relevance_score"] = pd.to_numeric(df_new["ma_relevance_score"], errors="coerce").fillna(0).astype(int)
-    df_new["review_flag"]       = df_new["review_flag"].astype(bool)
+    # 型の正規化 (文字列列はすべて str、欠損は空文字)
+    df_new = df_new.fillna("").astype(str)
 
     # 追記 (ファイル存在有無でヘッダー制御)
     file_exists = os.path.exists(csv_path)
@@ -435,31 +432,27 @@ def append_to_csv(records: list[dict], csv_path: str) -> int:
 
 def _normalize_raw_record(rec: dict) -> dict:
     """
-    各コレクターが返すフィールド名をスキーマ列名に統一する。
+    各コレクターが返すフィールドをスキーマ列名に統一し、派生フィールドを補完する。
 
-    search_pubmed.search() は publication_date を返すが、SCHEMA では
-    pub_date / pub_year の2列に分かれているため、ここで変換する。
-    search_europepmc.search() が同じフィールド名で返す場合も同様に処理する。
+    処理内容:
+      - first_author: authors フィールドをセミコロンで分割した先頭要素を設定する。
+        コレクターが既に first_author を設定している場合はそのまま使用する。
+      - publication_date: コレクターがそのまま返すため変換不要。
 
     Args:
         rec: コレクターが返した生レコード dict
 
     Returns:
-        pub_date / pub_year を持つ正規化済み dict (元 dict は変更しない)
+        first_author を補完した正規化済み dict (元 dict は変更しない)
     """
-    if "publication_date" not in rec:
-        return rec
+    result = dict(rec)
 
-    pub_date = rec.get("publication_date") or ""
-    try:
-        pub_year = int(pub_date[:4]) if pub_date else 0
-    except (ValueError, TypeError):
-        pub_year = 0
+    # first_author: authors の先頭要素を抽出 (既に設定済みの場合はスキップ)
+    if not result.get("first_author"):
+        authors_str = (result.get("authors") or "").strip()
+        result["first_author"] = authors_str.split(";")[0].strip() if authors_str else ""
 
-    normalized = {k: v for k, v in rec.items() if k != "publication_date"}
-    normalized["pub_date"] = pub_date
-    normalized["pub_year"] = pub_year
-    return normalized
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -643,9 +636,11 @@ def run_pipeline(
     for rec in unique_records:
         try:
             rec_classified = classify.classify_paper(rec)
-            # 収集日時を設定
-            rec_classified["collected_at"] = now_utc
-            rec_classified.setdefault("notes", "")
+            # スキーマ列名に合わせてフィールドを変換
+            rec_classified["retrieved_at"] = now_utc
+            rec_classified["why_it_matters_for_ma"] = rec_classified.pop(
+                "ma_relevance_reason", ""
+            )
             classified.append(rec_classified)
         except Exception as e:
             stats["errors"] += 1
