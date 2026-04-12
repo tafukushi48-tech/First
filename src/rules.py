@@ -316,9 +316,15 @@ DISEASE_SUBTYPE_RULES: list[Rule] = [
 # ---------------------------------------------------------------------------
 # 2. treatment_area 分類ルール
 # ---------------------------------------------------------------------------
-# 評価順: guidelines → acute_treatment → long_term_prophylaxis →
-#         short_term_prophylaxis → diagnosis → epidemiology → burden/QoL
+# 評価順: guidelines → short_term_prophylaxis → acute_treatment →
+#         long_term_prophylaxis → diagnosis → epidemiology → burden/QoL
 #         → basic science
+#
+# ※ short_term_prophylaxis を acute_treatment より先に評価する理由:
+#   STP 論文のアブストに Berinert 等の急性期薬剤名が登場しても
+#   STP として正しく分類するため。STP パターンはすべて
+#   HAE/angioedema/prophylaxis コンテキストを必須とするため
+#   acute treatment 論文が誤って STP に落ちるリスクは低い。
 
 TREATMENT_AREA_RULES: list[Rule] = [
     Rule(
@@ -334,6 +340,25 @@ TREATMENT_AREA_RULES: list[Rule] = [
             r"treatment\s+algorithm",
         ),
         description="ガイドライン・エキスパートコンセンサス・治療アルゴリズム",
+    ),
+    Rule(
+        label="short-term prophylaxis",
+        patterns=(
+            # 短期予防の直接表現 (最も強いシグナル — acute treatment より先に評価)
+            r"short.?term\s+prophylaxis",
+            # 処置前・手術前予防 (prophylaxis / management コンテキスト必須)
+            r"pre.?procedur\w*\s+(prophylaxis|management|treatment|HAE|angioedema)",
+            r"perioperative\s+(prophylaxis|management|HAE|angioedema)",
+            r"pre.?surgical\s+(prophylaxis|management|treatment|HAE)",
+            r"pre.?operative\s+(prophylaxis|management).{0,30}(HAE|angioedema|C1.?INH)",
+            # 処置前投与で使われる製剤 (HAE/angioedema コンテキスト限定)
+            r"fresh\s+frozen\s+plasma.{0,40}(HAE|angioedema|prophylaxis)",
+            r"\bFFP\b.{0,20}(HAE|angioedema|prophylaxis)",
+        ),
+        description=(
+            "短期予防療法 (STP): 処置前・周術期投与。"
+            "C1-INH IV/SC、FFP を用いた手術・処置前の予防管理"
+        ),
     ),
     Rule(
         label="acute treatment",
@@ -362,25 +387,6 @@ TREATMENT_AREA_RULES: list[Rule] = [
         description=(
             "急性発作治療: icatibant (Firazyr), ecallantide (Kalbitor), "
             "C1-INH 静注 (Berinert, Ruconest, Cinryze)"
-        ),
-    ),
-    Rule(
-        label="short-term prophylaxis",
-        patterns=(
-            # 短期予防の直接表現
-            r"short.?term\s+prophylaxis",
-            # 処置前・手術前予防 (prophylaxis / management コンテキスト必須)
-            r"pre.?procedur\w*\s+(prophylaxis|management|treatment|HAE|angioedema)",
-            r"perioperative\s+(prophylaxis|management|HAE|angioedema)",
-            r"pre.?surgical\s+(prophylaxis|management|treatment|HAE)",
-            r"pre.?operative\s+(prophylaxis|management).{0,30}(HAE|angioedema|C1.?INH)",
-            # 処置前投与で使われる製剤 (HAE/angioedema コンテキスト限定)
-            r"fresh\s+frozen\s+plasma.{0,40}(HAE|angioedema|prophylaxis)",
-            r"\bFFP\b.{0,20}(HAE|angioedema|prophylaxis)",
-        ),
-        description=(
-            "短期予防療法 (STP): 処置前・周術期投与。"
-            "C1-INH IV/SC、FFP を用いた手術・処置前の予防管理"
         ),
     ),
     Rule(
@@ -514,8 +520,13 @@ TREATMENT_AREA_RULES: list[Rule] = [
 # ---------------------------------------------------------------------------
 # 3. publication_type 分類ルール
 # ---------------------------------------------------------------------------
-# 評価順: guideline/consensus → RCT → OLE/extension → RWE/observational
+# 評価順: guideline/consensus → OLE/extension → RCT → RWE/observational
 #         → review → letter/commentary → case report
+#
+# ※ OLE/extension を RCT より先に評価する理由:
+#   OLE 論文のアブストには親 RCT の言及 ("randomized controlled trial") が
+#   頻繁に登場し、RCT に誤分類されやすい。OLE パターンはすべて
+#   extension/open-label 特有の表現を必須とするため RCT の誤捕捉はない。
 
 PUBLICATION_TYPE_RULES: list[Rule] = [
     Rule(
@@ -534,18 +545,6 @@ PUBLICATION_TYPE_RULES: list[Rule] = [
         description="診療ガイドライン・コンセンサス文書・エキスパート推奨",
     ),
     Rule(
-        label="RCT",
-        patterns=(
-            r"randomized\s+(controlled\s+)?trial\b",   # \b で "trials" (複数形) を除外
-            r"randomised\s+(controlled\s+)?trial\b",
-            r"\bRCT\b",
-            r"double.?blind.{0,40}placebo",
-            r"placebo.{0,40}controlled.{0,40}(trial|study)",
-            r"phase\s+(2|3|II|III)\s+(randomized|randomised|controlled)",
-        ),
-        description="ランダム化比較試験",
-    ),
-    Rule(
         label="OLE/extension",
         patterns=(
             r"open.?label\s+extension",
@@ -557,6 +556,18 @@ PUBLICATION_TYPE_RULES: list[Rule] = [
             r"continued\s+(treatment|therapy).{0,30}(open.?label|extension)",
         ),
         description="オープンラベル延長試験 (OLE)・長期フォローアップ試験",
+    ),
+    Rule(
+        label="RCT",
+        patterns=(
+            r"randomized\s+(controlled\s+)?trial\b",   # \b で "trials" (複数形) を除外
+            r"randomised\s+(controlled\s+)?trial\b",
+            r"\bRCT\b",
+            r"double.?blind.{0,40}placebo",
+            r"placebo.{0,40}controlled.{0,40}(trial|study)",
+            r"phase\s+(2|3|II|III)\s+(randomized|randomised|controlled)",
+        ),
+        description="ランダム化比較試験",
     ),
     Rule(
         label="RWE/observational",

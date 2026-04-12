@@ -36,7 +36,7 @@ from rules import (
 )
 
 # 分類ルールのバージョン (semver)
-CLASSIFIER_VERSION = "2.1.0"
+CLASSIFIER_VERSION = "2.1.1"
 
 
 # ---------------------------------------------------------------------------
