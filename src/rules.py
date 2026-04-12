@@ -277,15 +277,22 @@ DISEASE_SUBTYPE_RULES: list[Rule] = [
             r"HAE.{0,5}type\s*(1|I|2|II)\b",
             r"HAE.{0,5}(1|2)\b",
             r"type\s*(1|I|2|II).{0,5}HAE",
+            # C1-INH 欠乏の明示表現
             r"C1.?INH\s+deficien",
             r"C1.?inhibitor\s+deficien",
             r"C1\s+inhibitor\s+deficien",
             r"C1.?esterase\s+inhibitor\s+deficien",
+            # 定量的・機能的 C1-INH 低下の表現 (type 1 = 量的, type 2 = 機能的)
+            r"(low|reduced|absent|undetectable|decreased)\s+C1.?INH",
+            r"quantitative\s+(C1.?INH|C1.?inhibitor)\s+deficien",
+            r"functional\s+(C1.?INH|C1.?inhibitor)\s+deficien",
             r"\bSERPING1\b",
             r"C1.?INH.?HAE",
+            r"HAE.?C1.?INH",   # "HAE-C1INH" 等の略称
         ),
         description=(
-            "HAE type 1/2: C1-INH 量的・機能的欠乏、SERPING1 変異"
+            "HAE type 1/2: C1-INH 量的・機能的欠乏 (SERPING1 変異)。"
+            "low/reduced/absent C1-INH、quantitative/functional deficiency を含む"
         ),
     ),
     Rule(
@@ -355,6 +362,25 @@ TREATMENT_AREA_RULES: list[Rule] = [
         description=(
             "急性発作治療: icatibant (Firazyr), ecallantide (Kalbitor), "
             "C1-INH 静注 (Berinert, Ruconest, Cinryze)"
+        ),
+    ),
+    Rule(
+        label="short-term prophylaxis",
+        patterns=(
+            # 短期予防の直接表現
+            r"short.?term\s+prophylaxis",
+            # 処置前・手術前予防 (prophylaxis / management コンテキスト必須)
+            r"pre.?procedur\w*\s+(prophylaxis|management|treatment|HAE|angioedema)",
+            r"perioperative\s+(prophylaxis|management|HAE|angioedema)",
+            r"pre.?surgical\s+(prophylaxis|management|treatment|HAE)",
+            r"pre.?operative\s+(prophylaxis|management).{0,30}(HAE|angioedema|C1.?INH)",
+            # 処置前投与で使われる製剤 (HAE/angioedema コンテキスト限定)
+            r"fresh\s+frozen\s+plasma.{0,40}(HAE|angioedema|prophylaxis)",
+            r"\bFFP\b.{0,20}(HAE|angioedema|prophylaxis)",
+        ),
+        description=(
+            "短期予防療法 (STP): 処置前・周術期投与。"
+            "C1-INH IV/SC、FFP を用いた手術・処置前の予防管理"
         ),
     ),
     Rule(
@@ -497,11 +523,15 @@ PUBLICATION_TYPE_RULES: list[Rule] = [
         patterns=(
             r"\bguideline",
             r"consensus\s+(statement|document|recommendation)",
+            r"\bclinical\s+practice\s+guideline",
+            r"\bpractice\s+guideline",
             r"position\s+paper",
+            r"position\s+statement",
             r"management\s+recommendation",
+            r"\btreatment\s+recommendation",
             r"expert\s+(consensus|panel\s+recommendation)",
         ),
-        description="診療ガイドライン・コンセンサス文書",
+        description="診療ガイドライン・コンセンサス文書・エキスパート推奨",
     ),
     Rule(
         label="RCT",
@@ -520,11 +550,13 @@ PUBLICATION_TYPE_RULES: list[Rule] = [
         patterns=(
             r"open.?label\s+extension",
             r"\bOLE\b",
-            r"long.?term\s+(safety|tolerability|follow.?up).{0,30}(HAE|angioedema|study|trial)",
+            # "long-term safety" は RWE と混同しやすいため、extension / open-label との
+            # 共起を必須にして観察研究への誤分類を防ぐ
+            r"long.?term\s+(safety|tolerability).{0,50}(extension|open.?label|OLE)",
             r"extension\s+(study|period|phase|trial)",
             r"continued\s+(treatment|therapy).{0,30}(open.?label|extension)",
         ),
-        description="オープンラベル延長試験・長期安全性・フォローアップ試験",
+        description="オープンラベル延長試験 (OLE)・長期フォローアップ試験",
     ),
     Rule(
         label="RWE/observational",
@@ -554,11 +586,15 @@ PUBLICATION_TYPE_RULES: list[Rule] = [
             r"\breview\s+article\b",
             r"\bnarrative\s+review\b",
             r"\bscoping\s+review\b",
+            r"\bintegrative\s+review\b",
+            r"\bliterature\s+review\b",
             r"\bstate.?of.?the.?art\b",
             r"\breview\s+of\s+the\s+literature\b",
-            r"\bcurrent\s+(concepts|perspectives|status)\b",
+            r"\bcurrent\s+(concepts|perspectives|status|evidence)\b",
+            # 治療領域のアップデート系総説
+            r"\bupdates?\s+(on|in)\s+(hereditary\s+angioedema|HAE|angioedema\s+treatment)",
         ),
-        description="レビュー (メタ解析・SLR・ナラティブレビュー)",
+        description="レビュー (メタ解析・SR・SLR・NMA・ナラティブレビュー・総説アップデート)",
     ),
     Rule(
         label="letter/commentary",
@@ -635,6 +671,7 @@ HAE_SUBTYPES: frozenset[str] = frozenset({
 # MA 活動で特に関連度が高い治療領域セット
 TREATMENT_FOCUSED_AREAS: frozenset[str] = frozenset({
     "acute treatment",
+    "short-term prophylaxis",   # STP も臨床管理上の重要領域
     "long-term prophylaxis",
     "guidelines",
 })
@@ -662,4 +699,5 @@ MEDIUM_MA_AREAS: frozenset[str] = frozenset({
     "epidemiology",
     "burden/QoL",
     "diagnosis",
+    "short-term prophylaxis",   # 処置前管理の実態・エビデンスは間接的に有用
 })

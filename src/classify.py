@@ -36,7 +36,7 @@ from rules import (
 )
 
 # 分類ルールのバージョン (semver)
-CLASSIFIER_VERSION = "2.0.0"
+CLASSIFIER_VERSION = "2.1.0"
 
 
 # ---------------------------------------------------------------------------
@@ -252,6 +252,8 @@ def classify_ma_relevance(
     if treatment_area in MEDIUM_MA_AREAS and is_hae:
         if treatment_area == "diagnosis":
             return "medium", "診断・バイオマーカー文献として間接的に有用"
+        if treatment_area == "short-term prophylaxis":
+            return "medium", "短期予防 (処置前投与) の管理根拠として医師への情報提供に間接的に有用"
         return "medium", "疫学・QoLデータはペイヤー対応・価値訴求で間接的に有用"
 
     # --- low ---
@@ -260,10 +262,12 @@ def classify_ma_relevance(
     if treatment_area == "basic science":
         return "low", "基礎研究として参考資料に保持"
     if publication_type == "review":
-        return "low", "総説文献として参考資料に保持"
+        return "low", "治療に直結しない総説として参考資料に保持"
+    if publication_type == "unknown":
+        return "low", "論文種別が自動判定不能のため手動レビューが必要"
 
-    # デフォルト (non-HAE 疾患など)
-    return "low", "HAE直接関連性が低いため参考資料に保持"
+    # デフォルト: HAE 関連だが上記のいずれにも該当しないケース
+    return "low", "自動分類外のため参考資料として保持・手動確認を推奨"
 
 
 # ---------------------------------------------------------------------------
@@ -333,6 +337,11 @@ def generate_why_it_matters_for_ma(
                 f"{d}の急性発作治療に関するRCTとして、"
                 "治療選択の臨床的根拠として医療者への情報提供に活用できる可能性があります。"
             )
+        if treatment_area == "short-term prophylaxis":
+            return (
+                f"{d}の短期予防（処置前投与）に関するRCTとして、"
+                "周術期管理の臨床的根拠として医療者への情報提供に活用できる可能性があります。"
+            )
         return (
             f"{d}を対象としたRCTとして、"
             "MA活動における高エビデンスの参照文献として活用できる可能性があります。"
@@ -347,9 +356,13 @@ def generate_why_it_matters_for_ma(
 
     # ── レビュー (meta-analysis/SR vs ナラティブ) ─────────────────────────
     if publication_type == "review":
+        _treatment_focus_areas = {
+            "long-term prophylaxis", "acute treatment",
+            "short-term prophylaxis", "guidelines",
+        }
         if evidence_level == "high":
             # evidence_level が "high" に昇格 → meta-analysis または SR と判断
-            if treatment_area in {"long-term prophylaxis", "acute treatment", "guidelines"}:
+            if treatment_area in _treatment_focus_areas:
                 return (
                     f"{d}の治療に関するメタ解析・SRとして、"
                     "エビデンス総括の根拠資料として活用できる可能性があります。"
@@ -359,7 +372,7 @@ def generate_why_it_matters_for_ma(
                 "エビデンスの全体像把握に活用できる可能性があります。"
             )
         # ナラティブレビュー (evidence_level == "medium")
-        if treatment_area in {"long-term prophylaxis", "acute treatment", "guidelines"}:
+        if treatment_area in _treatment_focus_areas:
             return (
                 f"{d}の治療に関する総説として、"
                 "医師・payer向け教育資料の補足として活用できる可能性があります。"
@@ -375,6 +388,11 @@ def generate_why_it_matters_for_ma(
             return (
                 f"{d}の治療実態を示すリアルワールドデータとして、"
                 "payer対応や医療資源活用の根拠として有用な可能性があります。"
+            )
+        if treatment_area == "short-term prophylaxis":
+            return (
+                f"{d}の短期予防に関するリアルワールドデータとして、"
+                "周術期管理の実態把握とpayer対応の根拠として活用できる可能性があります。"
             )
         if treatment_area == "epidemiology":
             return (
@@ -401,6 +419,11 @@ def generate_why_it_matters_for_ma(
         return (
             f"{d}の診断・バイオマーカーに関する知見として、"
             "早期診断啓発や診断精度向上に向けた医師教育の参考資料として活用できる可能性があります。"
+        )
+    if treatment_area == "short-term prophylaxis":
+        return (
+            f"{d}の短期予防（処置前投与）に関する文献として、"
+            "周術期管理の根拠として医師への情報提供に活用できる可能性があります。"
         )
 
     # ── 論文種別フォールバック ────────────────────────────────────────────
