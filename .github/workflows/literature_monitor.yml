@@ -1,0 +1,57 @@
+name: HAE Literature Monitor
+
+# 毎週月曜 07:00 JST (= 日曜 22:00 UTC) に自動実行
+# GitHub Actions の cron は UTC 基準のため +9h でオフセット
+on:
+  schedule:
+    - cron: '0 22 * * 0'
+  workflow_dispatch:
+    inputs:
+      query:
+        description: '実行するクエリセット (スペース区切り、省略時は全セット)'
+        required: false
+        default: 'all'
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # papers_master.csv を push するために必要
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Create data directories
+        run: mkdir -p data/backups data/logs
+
+      - name: Run literature collection pipeline
+        env:
+          NCBI_API_KEY: ${{ secrets.NCBI_API_KEY }}
+          NCBI_EMAIL:   ${{ secrets.NCBI_EMAIL }}
+          PYTHONPATH:   src
+        run: |
+          QUERY="${{ github.event.inputs.query || 'all' }}"
+          python -m src.main --query $QUERY
+
+      - name: Commit and push if papers_master.csv changed
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/papers_master.csv
+          if git diff --staged --quiet; then
+            echo "papers_master.csv に変更なし — コミットをスキップします。"
+          else
+            ADDED=$(git diff --staged --numstat data/papers_master.csv | awk '{print $1}')
+            git commit -m "chore: 週次HAE論文収集 $(date -u '+%Y-%m-%d') (+${ADDED:-?} 行) [skip ci]"
+            git push
+          fi
