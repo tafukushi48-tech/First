@@ -1,0 +1,83 @@
+name: 週次 HAE 論文収集
+
+on:
+  schedule:
+    - cron: '0 22 * * 0'  # 月曜 07:00 JST (= 日曜 22:00 UTC)
+  workflow_dispatch:        # 手動実行
+
+permissions:
+  contents: write  # CSV commit & push に必要
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      NCBI_API_KEY: ${{ secrets.NCBI_API_KEY }}
+      NCBI_EMAIL:   ${{ secrets.NCBI_EMAIL }}
+      PYTHONPATH:   src   # classify / dedupe 等のフラットインポートを解決
+
+    steps:
+      - name: チェックアウト
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Python 3.11 をセットアップ
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: 依存パッケージをインストール
+        run: pip install -r requirements.txt
+
+      # ------------------------------------------------------------------ #
+      # パイプライン実行                                                      #
+      # 致命的エラー時は sys.exit(1) で終了するため、ステップが失敗する。       #
+      # ログアップロードは if: always() で必ず実行する。                        #
+      # ------------------------------------------------------------------ #
+      - name: パイプラインを実行
+        id: pipeline
+        run: python -m src.main
+
+      # ------------------------------------------------------------------ #
+      # ログを保存 (成功・失敗どちらでも実行)                                  #
+      # data/logs/ は .gitignore 対象のためアーティファクトで保管する          #
+      # ------------------------------------------------------------------ #
+      - name: 実行ログをアーティファクトとして保存
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pipeline-logs-${{ github.run_id }}
+          path: data/logs/
+          retention-days: 90
+
+      # ------------------------------------------------------------------ #
+      # papers_master.csv に差分があれば commit & push                       #
+      # data/backups/ は .gitignore 対象なのでステージングしない               #
+      # ------------------------------------------------------------------ #
+      - name: CSV 差分を確認して commit & push
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add data/papers_master.csv
+
+          if git diff --cached --quiet; then
+            echo "papers_master.csv に差分なし — コミットをスキップします"
+            exit 0
+          fi
+
+          # 追加件数をコミットメッセージに含める
+          ADDED=$(git diff --cached --numstat data/papers_master.csv \
+                  | awk '{print $1}')
+          # ヘッダー行は追加ではないので -1 する (初回作成時は 0 のまま)
+          if [ "${ADDED:-0}" -gt 0 ] 2>/dev/null; then
+            ADDED=$((ADDED - 1))
+          fi
+
+          DATE=$(date -u '+%Y-%m-%d')
+          git commit -m "chore(data): 週次論文収集 ${DATE} — ${ADDED}件追加"
+          git push origin HEAD
