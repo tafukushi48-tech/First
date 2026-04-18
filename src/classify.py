@@ -36,7 +36,7 @@ from rules import (
 )
 
 # 分類ルールのバージョン (semver)
-CLASSIFIER_VERSION = "2.1.1"
+CLASSIFIER_VERSION = "2.1.2"
 
 
 # ---------------------------------------------------------------------------
@@ -256,6 +256,12 @@ def classify_ma_relevance(
             return "medium", "短期予防 (処置前投与) の管理根拠として医師への情報提供に間接的に有用"
         return "medium", "疫学・QoLデータはペイヤー対応・価値訴求で間接的に有用"
 
+    # --- 治療重点領域 + HAE + 不明論文種別 → medium セーフティーネット ---
+    # (phase 1 試験・会議録・非標準用語の観察研究等、pub_type が判定不能でも
+    #  治療重点領域かつ HAE であれば MA 上の価値は中程度と判断する)
+    if is_treatment_focus and is_hae and publication_type == "unknown":
+        return "medium", "治療重点領域の文献として間接的に有用（論文種別は手動確認が必要）"
+
     # --- low ---
     if publication_type in LOW_MA_PUBTYPES:
         return "low", "症例報告またはコメンタリーとして参考資料に保持"
@@ -424,6 +430,19 @@ def generate_why_it_matters_for_ma(
         return (
             f"{d}の短期予防（処置前投与）に関する文献として、"
             "周術期管理の根拠として医師への情報提供に活用できる可能性があります。"
+        )
+
+    # ── 治療重点領域 + 不明論文種別フォールバック ────────────────────────
+    # (phase 1 試験・会議録等、論文種別が自動判定できない治療関連文献向け)
+    if treatment_area == "long-term prophylaxis" and publication_type == "unknown":
+        return (
+            f"{d}の長期予防に関する文献として（論文種別は手動確認が必要）、"
+            "MA活動でのパイプライン・エビデンス把握に活用できる可能性があります。"
+        )
+    if treatment_area == "acute treatment" and publication_type == "unknown":
+        return (
+            f"{d}の急性発作治療に関する文献として（論文種別は手動確認が必要）、"
+            "治療選択の補足的根拠として活用できる可能性があります。"
         )
 
     # ── 論文種別フォールバック ────────────────────────────────────────────

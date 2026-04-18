@@ -552,7 +552,11 @@ PUBLICATION_TYPE_RULES: list[Rule] = [
             # "long-term safety" は RWE と混同しやすいため、extension / open-label との
             # 共起を必須にして観察研究への誤分類を防ぐ
             r"long.?term\s+(safety|tolerability).{0,50}(extension|open.?label|OLE)",
-            r"extension\s+(study|period|phase|trial)",
+            # "extension study/period/phase/trial" は open-label または OLE の文脈が必須。
+            # 文脈なしの "extension study" はRCTの延長投与デザインを指す場合もあり
+            # 誤分類を防ぐため前後50字以内に open.?label または OLE\b が必要。
+            r"extension\s+(study|period|phase|trial).{0,50}(open.?label|OLE\b)",
+            r"(open.?label).{0,50}extension\s+(study|period|phase|trial)",
             r"continued\s+(treatment|therapy).{0,30}(open.?label|extension)",
         ),
         description="オープンラベル延長試験 (OLE)・長期フォローアップ試験",
