@@ -55,7 +55,7 @@ jobs:
 
       # ------------------------------------------------------------------ #
       # papers_master.csv に差分があれば commit & push                       #
-      # data/backups/ は .gitignore 対象なのでステージングしない               #
+      # git pull --rebase でリモートの先行コミットを取り込んでから push する   #
       # ------------------------------------------------------------------ #
       - name: CSV 差分を確認して commit & push
         run: |
@@ -79,4 +79,7 @@ jobs:
 
           DATE=$(date -u '+%Y-%m-%d')
           git commit -m "chore(data): 週次論文収集 ${DATE} — ${ADDED}件追加"
+
+          # リモートの先行コミットを rebase で取り込んでから push
+          git pull --rebase origin main
           git push origin HEAD
